@@ -1,0 +1,43 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+src-tauri/target
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Private visual sources and release working areas
+/public/character/work/
+/public/character/model/draft/
+/release-staging/
+/publish-staging/
+/.release/
+/.public-source/
+/.local/
+
+# Local configuration and signing material
+/.env
+/.env.*
+!.env.example
+*.pfx
+*.p12
+*.pem
+*.key

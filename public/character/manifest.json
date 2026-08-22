@@ -1,0 +1,327 @@
+{
+  "schemaVersion": 1,
+  "characterId": "linedog",
+  "characterModelVersion": "1.0",
+  "canvas": {
+    "width": 512,
+    "height": 512,
+    "centerX": 256,
+    "footBaseline": 448,
+    "safeMargin": 48
+  },
+  "animations": {
+    "idle": {
+      "animationId": "idle",
+      "revision": "r1",
+      "status": "FROZEN",
+      "sourceView": "front",
+      "loop": true,
+      "interruptPolicy": "interruptible_at_frame_boundary",
+      "nextState": "IDLE",
+      "frameDurationMs": 360,
+      "frames": [
+        {
+          "src": "idle/frame_01.png",
+          "durationMs": 420,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "idle/frame_02.png",
+          "durationMs": 320,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "idle/frame_03.png",
+          "durationMs": 420,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "idle/frame_04.png",
+          "durationMs": 320,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        }
+      ]
+    },
+    "blink": {
+      "animationId": "blink",
+      "revision": "r4",
+      "status": "FROZEN",
+      "sourceView": "front",
+      "loop": false,
+      "interruptPolicy": "interruptible_by_user_interaction",
+      "nextState": "IDLE",
+      "frameDurationMs": 160,
+      "frames": [
+        {
+          "src": "blink/frame_01.png",
+          "durationMs": 120,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "blink/frame_02.png",
+          "durationMs": 160,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "blink/frame_03.png",
+          "durationMs": 220,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        }
+      ]
+    },
+    "walk": {
+      "animationId": "walk",
+      "revision": "r1",
+      "status": "FROZEN",
+      "frozenVersion": "r1",
+      "sourceView": "side-right",
+      "loop": true,
+      "interruptPolicy": "interruptible_at_frame_boundary",
+      "nextState": "WALK",
+      "frameDurationMs": 130,
+      "frames": [
+        {
+          "src": "walk/frame_01.png",
+          "durationMs": 130,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "walk/frame_02.png",
+          "durationMs": 130,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "walk/frame_03.png",
+          "durationMs": 130,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "walk/frame_04.png",
+          "durationMs": 130,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "walk/frame_05.png",
+          "durationMs": 130,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "walk/frame_06.png",
+          "durationMs": 130,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        }
+      ]
+    },
+    "happy": {
+      "animationId": "happy",
+      "revision": "r1",
+      "status": "FROZEN",
+      "frozenVersion": "r1",
+      "sourceView": "front",
+      "loop": false,
+      "interruptPolicy": "interruptible_by_user_interaction",
+      "nextState": "IDLE",
+      "frameDurationMs": 160,
+      "frames": [
+        {
+          "src": "happy/frame_01.png",
+          "durationMs": 120,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "happy/frame_02.png",
+          "durationMs": 140,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "happy/frame_03.png",
+          "durationMs": 180,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": false
+        },
+        {
+          "src": "happy/frame_04.png",
+          "durationMs": 140,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "happy/frame_05.png",
+          "durationMs": 220,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        }
+      ]
+    },
+    "look_mouse": {
+      "animationId": "look_mouse",
+      "revision": "r2",
+      "status": "FROZEN",
+      "frozenVersion": "r2",
+      "sourceView": "front-to-three-quarter-right",
+      "loop": false,
+      "interruptPolicy": "interruptible_by_user_interaction",
+      "nextState": "LOOK",
+      "frameDurationMs": 160,
+      "frames": [
+        {
+          "src": "look_mouse/frame_01.png",
+          "durationMs": 120,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "look_mouse/frame_02.png",
+          "durationMs": 140,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "look_mouse/frame_03.png",
+          "durationMs": 220,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        }
+      ]
+    },
+    "drag": {
+      "animationId": "drag",
+      "revision": "r1",
+      "status": "FROZEN",
+      "frozenVersion": "r1",
+      "sourceView": "front",
+      "loop": true,
+      "interruptPolicy": "interruptible_by_user_interaction",
+      "nextState": "DRAG",
+      "frameDurationMs": 220,
+      "frames": [
+        {
+          "src": "drag/frame_01.png",
+          "durationMs": 220,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": false
+        },
+        {
+          "src": "drag/frame_02.png",
+          "durationMs": 220,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": false
+        }
+      ]
+    },
+    "fall": {
+      "animationId": "fall",
+      "revision": "r1",
+      "status": "FROZEN",
+      "frozenVersion": "r1",
+      "sourceView": "front",
+      "loop": true,
+      "interruptPolicy": "interruptible_by_user_interaction",
+      "nextState": "FALL",
+      "frameDurationMs": 140,
+      "frames": [
+        {
+          "src": "fall/frame_01.png",
+          "durationMs": 140,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": false
+        },
+        {
+          "src": "fall/frame_02.png",
+          "durationMs": 140,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": false
+        }
+      ]
+    },
+    "land": {
+      "animationId": "land",
+      "revision": "r2",
+      "status": "FROZEN",
+      "frozenVersion": "r2",
+      "sourceView": "front",
+      "loop": false,
+      "interruptPolicy": "interruptible_by_user_interaction",
+      "nextState": "IDLE",
+      "frameDurationMs": 80,
+      "frames": [
+        {
+          "src": "land/frame_01.png",
+          "durationMs": 90,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "land/frame_02.png",
+          "durationMs": 80,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "land/frame_03.png",
+          "durationMs": 80,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        }
+      ]
+    },
+    "turn": {
+      "animationId": "turn",
+      "revision": "r1",
+      "status": "FROZEN",
+      "frozenVersion": "r1",
+      "sourceView": "side-right-to-side-left",
+      "loop": false,
+      "interruptPolicy": "interruptible_by_user_interaction",
+      "nextState": "WALK",
+      "frameDurationMs": 80,
+      "frames": [
+        {
+          "src": "turn/frame_01.png",
+          "durationMs": 60,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "turn/frame_02.png",
+          "durationMs": 80,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "turn/frame_03.png",
+          "durationMs": 100,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "turn/frame_04.png",
+          "durationMs": 80,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        },
+        {
+          "src": "turn/frame_05.png",
+          "durationMs": 60,
+          "visualAnchor": {"x": 256, "y": 448},
+          "groundContact": true
+        }
+      ]
+    }
+  }
+}

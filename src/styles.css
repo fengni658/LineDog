@@ -1,0 +1,107 @@
+:root {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: transparent;
+}
+
+html,
+body,
+#app {
+  width: 160px;
+  min-width: 160px;
+  max-width: 160px;
+  height: 160px;
+  min-height: 160px;
+  max-height: 160px;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.pet-stage {
+  position: relative;
+  display: block;
+  width: 160px;
+  height: 160px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.pet-hitbox {
+  position: absolute;
+  left: 20%;
+  top: 17.5%;
+  width: 60%;
+  height: 68.75%;
+  box-sizing: border-box;
+  background: transparent;
+  border: 0;
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.pet-hitbox:active {
+  cursor: grabbing;
+}
+
+.pet-sprite {
+  --pet-facing-scale-x: 1;
+  --pet-press-scale: 1;
+  --pet-press-translate-y: 0px;
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(var(--pet-press-translate-y)) scale(var(--pet-press-scale)) scaleX(var(--pet-facing-scale-x));
+  transform-origin: center center;
+  transition: opacity 120ms ease-out, filter 120ms ease-out;
+}
+
+.pet-stage[data-runtime-state="ready"] .pet-sprite {
+  opacity: 1;
+}
+
+.pet-stage[data-facing="Left"] .pet-sprite {
+  --pet-facing-scale-x: -1;
+}
+
+.pet-stage[data-pressed="true"] .pet-sprite {
+  --pet-press-translate-y: 2px;
+  --pet-press-scale: 0.98;
+}
+
+.pet-stage[data-happy="true"] .pet-sprite {
+  filter: brightness(1.08);
+}
+
+.pet-stage[data-runtime-state="loading"] .pet-hitbox,
+.pet-stage[data-runtime-state="failed"] .pet-hitbox {
+  pointer-events: none;
+  cursor: default;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-sprite {
+    transition: none;
+  }
+}
