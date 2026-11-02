@@ -1,4 +1,4 @@
-import type { RuntimeAnimation, RuntimeFrame } from "./pet-manifest";
+import type { LogicalHitBox, RuntimeAnimation, RuntimeFrame } from "./pet-manifest";
 
 export interface TimelineClock {
   now(): number;
@@ -6,8 +6,14 @@ export interface TimelineClock {
   clearTimeout(handle: unknown): void;
 }
 
+/**
+ * Monotonic by design: every consumer measures elapsed durations, so a wall
+ * clock reading would drift whenever the system clock is adjusted. The whole
+ * runtime must share one time base, because timestamps produced by different
+ * clocks are not comparable.
+ */
 export const systemTimelineClock: TimelineClock = {
-  now: () => Date.now(),
+  now: () => globalThis.performance.now(),
   setTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
   clearTimeout: (handle) => globalThis.clearTimeout(handle as number),
 };
@@ -16,6 +22,7 @@ export interface TimelineFrameEvent {
   readonly animationId: string;
   readonly frameIndex: number;
   readonly frame: RuntimeFrame;
+  readonly animationHitBox?: LogicalHitBox;
   readonly timestampMs: number;
 }
 
@@ -81,10 +88,18 @@ export class AnimationTimeline {
       animationId: animation.animationId,
       frameIndex: this.currentFrameIndex,
       frame,
+      ...(animation.hitBox === undefined
+        ? {}
+        : { animationHitBox: animation.hitBox }),
       timestampMs: this.clock.now(),
     });
 
+    // Rendering may synchronously interrupt or replace this animation.
+    // Do not overwrite the replacement's timer with an obsolete handle.
+    if (revision !== this.playbackRevision || this.activeAnimation !== animation) return;
+
     this.timer = this.clock.setTimeout(() => {
+      if (revision !== this.playbackRevision) return;
       this.timer = undefined;
       this.advance(revision);
     }, frame.durationMs);

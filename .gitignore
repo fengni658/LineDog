@@ -32,6 +32,8 @@ src-tauri/target
 /.release/
 /.public-source/
 /.local/
+/.workbuddy/
+/outputs/
 
 # Local configuration and signing material
 /.env

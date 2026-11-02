@@ -3,6 +3,64 @@
   background: transparent;
 }
 
+/* Only the decoration gets extra headroom. The original dog remains 160px. */
+html[data-parachute-expanded="true"],
+html[data-parachute-expanded="true"] body,
+html[data-parachute-expanded="true"] #app {
+  height: 240px;
+  min-height: 240px;
+  max-height: 240px;
+}
+html[data-parachute-expanded="true"] .pet-stage { top: 80px; }
+#app { position: relative; }
+.pet-stage { z-index: 1; }
+.pet-parachute {
+  --parachute-open: 0;
+  --parachute-width: 0.3;
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 160px;
+  height: 240px;
+  pointer-events: none;
+  z-index: 0;
+  visibility: hidden;
+}
+html[data-parachute-expanded="true"] .pet-parachute:not([data-phase="NONE"]) { visibility: visible; }
+.pet-parachute svg { display: block; width: 160px; height: 240px; overflow: hidden; }
+.pet-parachute-canopy {
+  transform-origin: 80px 66px;
+  transform: scale(var(--parachute-width), var(--parachute-open));
+  opacity: var(--parachute-open);
+}
+.pet-parachute-ropes { opacity: var(--parachute-open); }
+
+.pet-bubble {
+  position: absolute;
+  z-index: 5;
+  top: 4px;
+  left: 8px;
+  width: max-content;
+  max-width: 146px;
+  box-sizing: border-box;
+  padding: 1px 6px;
+  border: 1px solid #665447;
+  border-radius: 10px;
+  background: #fff8e9;
+  color: #3d3028;
+  font: 12px/14px system-ui, "Segoe UI", sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease-out;
+}
+.pet-bubble[data-visible="true"] { opacity: 1; visibility: visible; }
+.pet-bubble[data-compact="true"] { padding: 0 5px; font-size: 10px; line-height: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .pet-bubble { transition: none; }
+}
+
 html,
 body,
 #app {
@@ -48,10 +106,24 @@ body {
   cursor: grabbing;
 }
 
-.pet-sprite {
+.pet-facing-layer {
   --pet-facing-scale-x: 1;
+  position: absolute;
+  inset: 0;
+  width: 160px;
+  height: 160px;
+  pointer-events: none;
+  transform: scaleX(var(--pet-facing-scale-x));
+  transform-origin: 50% 140px;
+}
+
+.pet-sprite {
   --pet-press-scale: 1;
+  --pet-sleep-scale: 1;
+  --pet-frame-scale: 1;
   --pet-press-translate-y: 0px;
+  --pet-anchor-translate-x: 0px;
+  --pet-anchor-translate-y: 0px;
   position: absolute;
   inset: 0;
   display: block;
@@ -60,26 +132,140 @@ body {
   object-fit: contain;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(var(--pet-press-translate-y)) scale(var(--pet-press-scale)) scaleX(var(--pet-facing-scale-x));
-  transform-origin: center center;
-  transition: opacity 120ms ease-out, filter 120ms ease-out;
+  transform: translateX(var(--pet-anchor-translate-x)) translateY(calc(var(--pet-anchor-translate-y) + var(--pet-press-translate-y))) scale(calc(var(--pet-press-scale) * var(--pet-sleep-scale) * var(--pet-frame-scale)));
+  transform-origin: 50% 140px;
+  transition: opacity 320ms ease-out, filter 320ms ease-out;
 }
 
 .pet-stage[data-runtime-state="ready"] .pet-sprite {
   opacity: 1;
 }
 
-.pet-stage[data-facing="Left"] .pet-sprite {
+/* 溶解渲染器会用内联 opacity 驱动上下两层；就绪前强制整组不可见，
+   避免内联样式抢在启动淡入之前把小狗提前显形。 */
+.pet-stage:not([data-runtime-state="ready"]) .pet-sprite {
+  opacity: 0 !important;
+}
+
+/* 帧溶解的下层画布：常态隐藏，仅溶解窗口内由内联样式点亮。 */
+.pet-sprite-under {
+  opacity: 0;
+}
+
+.pet-stage[data-facing="Left"] .pet-facing-layer {
   --pet-facing-scale-x: -1;
 }
 
-.pet-stage[data-pressed="true"] .pet-sprite {
-  --pet-press-translate-y: 2px;
-  --pet-press-scale: 0.98;
+/* Pointer arming does not transform the sprite. Feedback starts only when
+   Runtime accepts the release, so throttled taps cannot make it twitch. */
+
+/* 拖拽刚性跟随光标，不保留按压/睡眠缩放或在途变换。 */
+.pet-stage[data-dragging="true"] .pet-sprite {
+  --pet-press-scale: 1;
+  --pet-sleep-scale: 1;
+  --pet-frame-scale: 1;
+  --pet-press-translate-y: 0px;
+  transition: none;
+  animation: none;
+}
+
+.pet-stage[data-dragging="true"] .pet-facing-layer {
+  animation: none;
+  transform: scaleX(var(--pet-facing-scale-x));
+}
+
+.pet-stage[data-dragging="true"] .pet-sleep-closeup {
+  opacity: 0;
+  transition: none;
+}
+
+/* 入睡后叠加极轻微的呼吸起伏（围绕脚基线缩放）。 */
+.pet-stage[data-sleeping="true"]:not([data-dragging="true"]) .pet-facing-layer {
+  transform-origin: 50% 140px;
+  animation: pet-sleep-breath 5.6s ease-in-out infinite;
+}
+
+@keyframes pet-sleep-breath {
+  0%,
+  100% {
+    transform: scaleX(var(--pet-facing-scale-x)) scaleY(1);
+  }
+
+  50% {
+    transform: scaleX(var(--pet-facing-scale-x)) scaleY(1.006);
+  }
 }
 
 .pet-stage[data-happy="true"] .pet-sprite {
   filter: brightness(1.08);
+}
+
+.pet-sleep-closeup {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 900ms ease-in-out;
+}
+
+.pet-sleep-closeup__glow {
+  position: absolute;
+  left: 27px;
+  top: 54px;
+  width: 108px;
+  height: 78px;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 244, 201, 0.2) 0%,
+    rgba(255, 229, 158, 0.1) 52%,
+    rgba(255, 229, 158, 0) 76%
+  );
+  filter: blur(3px);
+  opacity: 0.55;
+}
+
+.pet-sleep-zzz {
+  position: absolute;
+  left: 101px;
+  top: 22px;
+  width: 46px;
+  height: 58px;
+  color: rgba(100, 76, 52, 0.92);
+  font-family: "Segoe UI Rounded", "Arial Rounded MT Bold", system-ui, sans-serif;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8), 0 2px 5px rgba(111, 77, 43, 0.2);
+}
+
+.pet-sleep-zzz__letter {
+  position: absolute;
+  display: block;
+  opacity: 0.55;
+}
+
+.pet-sleep-zzz__letter--1 {
+  left: 1px;
+  bottom: 2px;
+  font-size: 15px;
+}
+
+.pet-sleep-zzz__letter--2 {
+  left: 14px;
+  bottom: 19px;
+  font-size: 19px;
+}
+
+.pet-sleep-zzz__letter--3 {
+  left: 29px;
+  bottom: 38px;
+  font-size: 23px;
+}
+
+.pet-stage[data-sleeping="true"]:not([data-dragging="true"]) .pet-sleep-closeup {
+  opacity: 1;
 }
 
 .pet-stage[data-runtime-state="loading"] .pet-hitbox,
@@ -101,7 +287,14 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pet-sprite {
+  .pet-sprite,
+  .pet-sleep-closeup {
     transition: none;
   }
+
+  .pet-stage[data-dragging="true"] .pet-facing-layer,
+  .pet-stage[data-sleeping="true"]:not([data-dragging="true"]) .pet-facing-layer {
+    animation: none;
+  }
+
 }

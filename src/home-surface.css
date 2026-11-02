@@ -1,0 +1,51 @@
+:root,
+html,
+body,
+#app {
+  width: 256px;
+  min-width: 256px;
+  max-width: 256px;
+  height: 256px;
+  min-height: 256px;
+  max-height: 256px;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.home-surface {
+  position: relative;
+  width: 256px;
+  height: 256px;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.home-surface[data-home-visibility="hidden"] {
+  opacity: 0;
+}
+
+.home-surface[data-home-visibility="shown"],
+.home-surface[data-home-render-ready="true"] {
+  opacity: 1;
+}
+
+.home-surface__image {
+  display: block;
+  width: 256px;
+  height: 256px;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-surface {
+    transition: none;
+  }
+}

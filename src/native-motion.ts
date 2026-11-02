@@ -2,35 +2,38 @@ import {
   systemTimelineClock,
   type TimelineClock,
 } from "./animation-timeline";
+import {
+  type NativeDesktopSnapshotV1,
+  type NativeHomeWindowSnapshot,
+  type NativeLogicalPoint,
+  type NativeLogicalRect,
+  type NativePlatformPort,
+  type NativeSetOverlayPositionArgs,
+  type NativeWindowTopLeftLogical,
+} from "./native-platform";
 
 export const WINDOW_POSITION_COMMAND_INTERVAL_MS = 1000 / 30;
 
-export type LogicalPoint = Readonly<{ x: number; y: number }>;
-export type PhysicalPoint = Readonly<{ x: number; y: number }>;
-export type PhysicalSize = Readonly<{ width: number; height: number }>;
-export type LogicalWorkArea = Readonly<{
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}>;
-
-export interface NativeMonitorFacts {
-  readonly name: string | null;
-  readonly scaleFactor: number;
-  readonly workArea: Readonly<{
-    position: PhysicalPoint;
-    size: PhysicalSize;
-  }>;
-}
+export type LogicalPoint = NativeLogicalPoint;
+export type LogicalWorkArea = NativeLogicalRect;
+export type WindowTopLeftLogical = NativeWindowTopLeftLogical;
 
 export interface MotionSnapshot {
+  readonly snapshotRevision?: number;
+  readonly monitorScaleFactor?: number;
+  readonly homeWindow?: NativeHomeWindowSnapshot | null;
   readonly currentMonitorId: string;
+  readonly windowScaleFactor: number;
   readonly workArea: LogicalWorkArea;
-  readonly windowPosition: LogicalPoint;
+  /** Outer-window position expressed in the coordinator's only input space. */
+  readonly windowPosition: WindowTopLeftLogical;
 }
 
 export interface CurrentWorkAreaSnapshot {
+  readonly snapshotRevision?: number;
+  readonly windowScaleFactor?: number;
+  readonly monitorScaleFactor?: number;
+  readonly homeWindow?: NativeHomeWindowSnapshot | null;
   readonly currentMonitorId: string;
   readonly workArea: LogicalWorkArea;
 }
@@ -38,16 +41,19 @@ export interface CurrentWorkAreaSnapshot {
 export interface PetMotionPort {
   resync(): Promise<MotionSnapshot | null>;
   readCurrentWorkArea?(): Promise<CurrentWorkAreaSnapshot | null>;
-  requestPosition(position: LogicalPoint): void;
-  stop(): void;
+  dispose?(): void;
+  /**
+   * The sole low-level writer used by MotionCoordinator. Its Promise resolves
+   * only after the throttled native write completes, or rejects on failure.
+   */
+  writeWindowTopLeft(position: WindowTopLeftLogical): Promise<void>;
 }
 
-export interface NativeWindowMotionApi {
-  currentMonitor(): Promise<NativeMonitorFacts | null>;
-  outerPosition(): Promise<PhysicalPoint>;
-  scaleFactor(): Promise<number>;
-  setPosition(position: LogicalPoint): Promise<void>;
-}
+/** The frozen platform subset consumed by the high-level motion adapter. */
+export type NativeWindowMotionApi = Pick<
+  NativePlatformPort,
+  "desktopSnapshot" | "setOverlayPosition"
+>;
 
 export type NativeMotionErrorReporter = (
   operation: string,
@@ -59,68 +65,30 @@ export interface NativeWindowMotionAdapterOptions {
   readonly reportError?: NativeMotionErrorReporter;
 }
 
-function assertValidScaleFactor(scaleFactor: number, label: string): void {
-  if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
-    throw new Error(`${label} must be a finite value greater than zero.`);
-  }
-}
-
-function assertFinitePosition(position: LogicalPoint): void {
-  if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) {
-    throw new Error("LineDog window position must use finite logical coordinates.");
-  }
-}
-
-export function physicalToLogicalPoint(
-  point: PhysicalPoint,
-  scaleFactor: number,
-): LogicalPoint {
-  assertValidScaleFactor(scaleFactor, "The scale factor");
-
-  return {
-    x: point.x / scaleFactor,
-    y: point.y / scaleFactor,
-  };
-}
-
-export function physicalToLogicalWorkArea(
-  monitor: NativeMonitorFacts,
-): LogicalWorkArea {
-  assertValidScaleFactor(monitor.scaleFactor, "The monitor scale factor");
-
-  return {
-    x: monitor.workArea.position.x / monitor.scaleFactor,
-    y: monitor.workArea.position.y / monitor.scaleFactor,
-    width: monitor.workArea.size.width / monitor.scaleFactor,
-    height: monitor.workArea.size.height / monitor.scaleFactor,
-  };
-}
-
 export function createMotionSnapshot(
-  monitor: NativeMonitorFacts,
-  windowOuterPosition: PhysicalPoint,
-  windowScaleFactor: number,
+  snapshot: NativeDesktopSnapshotV1,
 ): MotionSnapshot {
-  const currentWorkArea = createCurrentWorkAreaSnapshot(monitor);
-  const windowPosition = physicalToLogicalPoint(
-    windowOuterPosition,
-    windowScaleFactor,
-  );
-
   return {
-    ...currentWorkArea,
-    windowPosition,
+    snapshotRevision: snapshot.snapshotRevision,
+    monitorScaleFactor: snapshot.monitorScaleFactor,
+    homeWindow: snapshot.homeWindow ? { ...snapshot.homeWindow, rect: { ...snapshot.homeWindow.rect } } : null,
+    currentMonitorId: snapshot.currentMonitorId,
+    workArea: { ...snapshot.workArea },
+    windowPosition: { ...snapshot.windowPosition },
+    windowScaleFactor: snapshot.windowScaleFactor,
   };
 }
 
 export function createCurrentWorkAreaSnapshot(
-  monitor: NativeMonitorFacts,
+  snapshot: NativeDesktopSnapshotV1,
 ): CurrentWorkAreaSnapshot {
   return {
-    currentMonitorId:
-      monitor.name ??
-      `${monitor.workArea.position.x}:${monitor.workArea.position.y}:${monitor.workArea.size.width}:${monitor.workArea.size.height}`,
-    workArea: physicalToLogicalWorkArea(monitor),
+    snapshotRevision: snapshot.snapshotRevision,
+    windowScaleFactor: snapshot.windowScaleFactor,
+    monitorScaleFactor: snapshot.monitorScaleFactor,
+    homeWindow: snapshot.homeWindow ? { ...snapshot.homeWindow, rect: { ...snapshot.homeWindow.rect } } : null,
+    currentMonitorId: snapshot.currentMonitorId,
+    workArea: { ...snapshot.workArea },
   };
 }
 
@@ -140,10 +108,9 @@ function createOnceMotionErrorReporter(): NativeMotionErrorReporter {
 export class NativeWindowMotionAdapter implements PetMotionPort {
   private readonly clock: TimelineClock;
   private readonly reportError: NativeMotionErrorReporter;
-  private pendingPosition: LogicalPoint | undefined;
-  private writeTimer: unknown | undefined;
-  private inFlightWrite: Promise<void> | undefined;
   private lastWriteAtMs = Number.NEGATIVE_INFINITY;
+  private disposed = false;
+  private coordinateScaleFactor: number | undefined;
 
   constructor(
     private readonly nativeWindow: NativeWindowMotionApi,
@@ -154,123 +121,88 @@ export class NativeWindowMotionAdapter implements PetMotionPort {
   }
 
   async resync(): Promise<MotionSnapshot | null> {
-    this.stop();
-
-    if (this.inFlightWrite) {
-      await this.inFlightWrite;
-    }
-
     try {
-      const [monitor, windowOuterPosition, windowScaleFactor] = await Promise.all([
-        this.nativeWindow.currentMonitor(),
-        this.nativeWindow.outerPosition(),
-        this.nativeWindow.scaleFactor(),
-      ]);
-
-      if (!monitor) {
-        this.reportError(
-          "current monitor",
-          new Error("LineDog could not identify the current monitor."),
-        );
-        return null;
-      }
-
-      return createMotionSnapshot(monitor, windowOuterPosition, windowScaleFactor);
+      const snapshot = await this.nativeWindow.desktopSnapshot();
+      this.acceptDesktopSnapshot(snapshot);
+      return createMotionSnapshot(snapshot);
     } catch (error) {
       this.reportError("window motion synchronization", error);
       return null;
     }
   }
 
+  /** Call only when Runtime adopts coordinates from this snapshot. */
+  acceptDesktopSnapshot(snapshot: Pick<MotionSnapshot, "windowScaleFactor">): void {
+    if (this.disposed) return;
+    if (!Number.isFinite(snapshot.windowScaleFactor) || snapshot.windowScaleFactor <= 0) {
+      throw new Error("LineDog accepted motion snapshot scale must be positive and finite.");
+    }
+    this.coordinateScaleFactor = snapshot.windowScaleFactor;
+  }
+
   async readCurrentWorkArea(): Promise<CurrentWorkAreaSnapshot | null> {
     try {
-      const monitor = await this.nativeWindow.currentMonitor();
-
-      if (!monitor) {
-        this.reportError(
-          "current monitor",
-          new Error("LineDog could not identify the current monitor."),
-        );
-        return null;
-      }
-
-      return createCurrentWorkAreaSnapshot(monitor);
+      return createCurrentWorkAreaSnapshot(
+        await this.nativeWindow.desktopSnapshot(),
+      );
     } catch (error) {
       this.reportError("current monitor facts", error);
       return null;
     }
   }
 
-  requestPosition(position: LogicalPoint): void {
-    try {
-      assertFinitePosition(position);
-    } catch (error) {
-      this.reportError("window position request", error);
-      return;
-    }
-
-    this.pendingPosition = { ...position };
-    this.scheduleWrite();
-  }
-
-  stop(): void {
-    this.pendingPosition = undefined;
-
-    if (this.writeTimer !== undefined) {
-      this.clock.clearTimeout(this.writeTimer);
-      this.writeTimer = undefined;
-    }
-  }
-
   dispose(): void {
-    this.stop();
+    this.disposed = true;
   }
 
-  private scheduleWrite(): void {
-    if (
-      this.pendingPosition === undefined ||
-      this.inFlightWrite !== undefined ||
-      this.writeTimer !== undefined
-    ) {
-      return;
+  async writeWindowTopLeft(position: WindowTopLeftLogical): Promise<void> {
+    if (this.disposed) {
+      throw new Error("LineDog native motion adapter has been disposed.");
     }
+
+    if (
+      position.space !== "WINDOW_TOP_LEFT_LOGICAL" ||
+      !Number.isFinite(position.x) ||
+      !Number.isFinite(position.y)
+    ) {
+      const error = new Error(
+        "LineDog window position must use finite logical top-left coordinates.",
+      );
+      this.reportError("window position request", error);
+      throw error;
+    }
+
+    // A Runtime rebase may occur while this write waits for the throttle.
+    // Its already supplied coordinates must retain their original scale.
+    const coordinateScaleFactor = this.coordinateScaleFactor;
 
     const elapsedSincePreviousWrite = this.clock.now() - this.lastWriteAtMs;
     const delayMs = Math.max(
       0,
       WINDOW_POSITION_COMMAND_INTERVAL_MS - elapsedSincePreviousWrite,
     );
-
-    this.writeTimer = this.clock.setTimeout(() => {
-      this.writeTimer = undefined;
-      void this.flushWrite();
-    }, delayMs);
-  }
-
-  private async flushWrite(): Promise<void> {
-    if (this.inFlightWrite !== undefined || this.pendingPosition === undefined) {
-      return;
+    if (delayMs > 0) {
+      await new Promise<void>((resolve) => {
+        this.clock.setTimeout(resolve, delayMs);
+      });
     }
 
-    const targetPosition = this.pendingPosition;
-    this.pendingPosition = undefined;
+    if (this.disposed) {
+      throw new Error("LineDog native motion adapter has been disposed.");
+    }
+
     this.lastWriteAtMs = this.clock.now();
-
-    const write = Promise.resolve().then(() =>
-      this.nativeWindow.setPosition(targetPosition),
-    );
-    this.inFlightWrite = write;
-
+    const positionRequest: NativeSetOverlayPositionArgs = {
+      windowLabel: "main",
+      x: position.x,
+      y: position.y,
+      ...(coordinateScaleFactor === undefined ? {} : { coordinateScaleFactor }),
+    };
     try {
-      await write;
+      await this.nativeWindow.setOverlayPosition(positionRequest);
     } catch (error) {
       this.reportError("set window position", error);
-    } finally {
-      if (this.inFlightWrite === write) {
-        this.inFlightWrite = undefined;
-      }
-
-      this.scheduleWrite();
+      throw error;
     }
   }
 }

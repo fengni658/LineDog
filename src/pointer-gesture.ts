@@ -1,12 +1,17 @@
-import type { GlobalPointerSample } from "./native-spike";
 import type {
   LogicalPoint,
   LogicalWorkArea,
   PetMotionPort,
 } from "./native-motion";
-import { RUNTIME_VIEWPORT_SIZE } from "./sprite-renderer";
+import type { NativePointerSnapshotV1 } from "./native-platform";
+import { clampWindowToWorkArea } from "./pet-behavior-core";
 
-export const DRAG_START_THRESHOLD_LOGICAL_PX = 6;
+/**
+ * 提起门槛。此值不属于 AGENTS.md 冻结基线，可按观感调整。
+ * 6px 会让小狗在鼠标轻微抖动时就被瞬间拽起，因此放宽到 12px：
+ * 既保留跟手性，又给"被抓住 → 抬起"留出可感知的启动距离。
+ */
+export const DRAG_START_THRESHOLD_LOGICAL_PX = 12;
 
 export type PointerGesturePhase = "NONE" | "ARMED" | "DRAG";
 export type PointerGestureEnd =
@@ -16,17 +21,22 @@ export type PointerGestureEnd =
 
 export interface GestureRuntimePort {
   beginPointerGesture(): boolean;
+  canConfirmPointerClick?(): boolean;
   promotePointerGestureToDrag(): boolean;
   movePointerDrag(
     position: LogicalPoint,
     currentMonitorId: string,
     workArea: LogicalWorkArea,
   ): boolean;
-  endPointerGesture(options: { readonly triggerHappy: boolean }): Promise<boolean>;
+  endPointerGesture(options: {
+    readonly triggerHappy: boolean;
+    /** Release remains cancellable while Runtime validates native geometry. */
+    readonly isCurrent?: () => boolean;
+  }): Promise<boolean>;
 }
 
 export interface PointerSamplePort {
-  readPointerSample(): Promise<GlobalPointerSample>;
+  readPointerSample(): Promise<NativePointerSnapshotV1>;
   setInteractionLock(locked: boolean): Promise<void>;
   setPointerPressed(pressed: boolean): void;
 }
@@ -34,44 +44,25 @@ export interface PointerSamplePort {
 type ActiveGesture = {
   readonly pointerId: number;
   phase: "PREPARING" | "ARMED" | "DRAG";
-  initialSample?: GlobalPointerSample;
-  initialWindowLogical?: LogicalPoint;
+  initialSample?: NativePointerSnapshotV1;
+  coordinateScaleFactor?: number;
+  grabOffsetLogical?: LogicalPoint;
   workArea?: LogicalWorkArea;
   currentMonitorId?: string;
-  latestSample?: GlobalPointerSample;
+  latestSample?: NativePointerSnapshotV1;
+  preparation?: Promise<boolean>;
+  releasePending?: boolean;
+  cancelled?: boolean;
+  finalization?: Promise<boolean>;
 };
 
-function assertValidScaleFactor(scaleFactor: number): void {
-  if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
-    throw new Error("Pointer gesture scale factor must be a finite value greater than zero.");
-  }
-}
-
-export function physicalPointerDeltaToLogical(
-  initialCursorPhysical: LogicalPoint,
-  currentCursorPhysical: LogicalPoint,
-  startScaleFactor: number,
+export function pointerDeltaToLogical(
+  initialCursorLogical: LogicalPoint,
+  currentCursorLogical: LogicalPoint,
 ): LogicalPoint {
-  assertValidScaleFactor(startScaleFactor);
-
   return {
-    x: (currentCursorPhysical.x - initialCursorPhysical.x) / startScaleFactor,
-    y: (currentCursorPhysical.y - initialCursorPhysical.y) / startScaleFactor,
-  };
-}
-
-export function clampWindowPositionToWorkArea(
-  position: LogicalPoint,
-  workArea: LogicalWorkArea,
-): LogicalPoint {
-  const minX = workArea.x;
-  const minY = workArea.y;
-  const maxX = Math.max(minX, workArea.x + workArea.width - RUNTIME_VIEWPORT_SIZE);
-  const maxY = Math.max(minY, workArea.y + workArea.height - RUNTIME_VIEWPORT_SIZE);
-
-  return {
-    x: Math.min(Math.max(position.x, minX), maxX),
-    y: Math.min(Math.max(position.y, minY), maxY),
+    x: currentCursorLogical.x - initialCursorLogical.x,
+    y: currentCursorLogical.y - initialCursorLogical.y,
   };
 }
 
@@ -81,6 +72,7 @@ function distance(point: LogicalPoint): number {
 
 export class PointerGestureController {
   private active: ActiveGesture | undefined;
+  private readonly finalizing = new Set<ActiveGesture>();
 
   constructor(
     private readonly runtime: GestureRuntimePort,
@@ -96,17 +88,24 @@ export class PointerGestureController {
     return this.active.phase;
   }
 
-  async begin(pointerId: number): Promise<boolean> {
+  begin(pointerId: number): Promise<boolean> {
     if (this.active || !this.runtime.beginPointerGesture()) {
-      return false;
+      return Promise.resolve(false);
     }
 
     const active: ActiveGesture = { pointerId, phase: "PREPARING" };
     this.active = active;
-    this.pointerSamplePort.setPointerPressed(true);
-    await this.pointerSamplePort.setInteractionLock(true);
+    active.preparation = this.prepare(active);
+    return active.preparation;
+  }
 
+  private async prepare(active: ActiveGesture): Promise<boolean> {
+    this.pointerSamplePort.setPointerPressed(true);
     try {
+      await this.pointerSamplePort.setInteractionLock(true);
+      // Cancellation can finish while the native lock is queued. Do not add
+      // obsolete geometry reads ahead of a subsequent real gesture.
+      if (this.active !== active) return false;
       const [initialSample, snapshot] = await Promise.all([
         this.pointerSamplePort.readPointerSample(),
         this.motionPort.resync(),
@@ -122,7 +121,12 @@ export class PointerGestureController {
       }
 
       active.initialSample = initialSample;
-      active.initialWindowLogical = { ...snapshot.windowPosition };
+      active.coordinateScaleFactor = snapshot.windowScaleFactor;
+      const cursor = projectCursor(initialSample, snapshot.windowScaleFactor);
+      active.grabOffsetLogical = {
+        x: cursor.x - snapshot.windowPosition.x,
+        y: cursor.y - snapshot.windowPosition.y,
+      };
       active.workArea = { ...snapshot.workArea };
       active.currentMonitorId = snapshot.currentMonitorId;
       active.phase = "ARMED";
@@ -140,10 +144,10 @@ export class PointerGestureController {
     }
   }
 
-  handleGlobalPointerSample(sample: GlobalPointerSample): void {
+  handleGlobalPointerSample(sample: NativePointerSnapshotV1): void {
     const active = this.active;
 
-    if (!active) {
+    if (!active || active.releasePending) {
       return;
     }
 
@@ -161,33 +165,42 @@ export class PointerGestureController {
       return false;
     }
 
+    if (outcome === "pointerup" && active.phase === "PREPARING" &&
+        this.runtime.canConfirmPointerClick?.() !== false) {
+      // DOM releases do not await native IPC. Retain a real release until its
+      // initial geometry is validated; cancellation still wins immediately.
+      active.releasePending = true;
+      await active.preparation;
+      if (this.active !== active) return false;
+    }
     return this.complete(active, outcome === "pointerup" && active.phase === "ARMED");
   }
 
   async cancel(): Promise<void> {
+    for (const ending of this.finalizing) ending.cancelled = true;
     const active = this.active;
 
     if (active) {
-      await this.complete(active, false);
+      active.cancelled = true;
+      void this.complete(active, false);
     }
+    await Promise.all([...this.finalizing].map(ending => ending.finalization));
   }
 
-  private advance(active: ActiveGesture, sample: GlobalPointerSample): void {
+  private advance(active: ActiveGesture, sample: NativePointerSnapshotV1): void {
     if (
       this.active !== active ||
       !active.initialSample ||
-      !active.initialWindowLogical ||
+      !active.coordinateScaleFactor ||
+      !active.grabOffsetLogical ||
       !active.workArea ||
       !active.currentMonitorId
     ) {
       return;
     }
 
-    const delta = physicalPointerDeltaToLogical(
-      active.initialSample.cursorPhysical,
-      sample.cursorPhysical,
-      active.initialSample.scaleFactor,
-    );
+    const cursor = projectCursor(sample, active.coordinateScaleFactor);
+    const delta = pointerDeltaToLogical(projectCursor(active.initialSample, active.coordinateScaleFactor), cursor);
 
     if (active.phase === "ARMED") {
       if (distance(delta) < DRAG_START_THRESHOLD_LOGICAL_PX) {
@@ -205,10 +218,10 @@ export class PointerGestureController {
       return;
     }
 
-    const nextPosition = clampWindowPositionToWorkArea(
+    const nextPosition = clampWindowToWorkArea(
       {
-        x: active.initialWindowLogical.x + delta.x,
-        y: active.initialWindowLogical.y + delta.y,
+        x: cursor.x - active.grabOffsetLogical.x,
+        y: cursor.y - active.grabOffsetLogical.y,
       },
       active.workArea,
     );
@@ -219,17 +232,37 @@ export class PointerGestureController {
     );
   }
 
-  private async complete(
+  private complete(
     active: ActiveGesture,
     triggerHappy: boolean,
   ): Promise<boolean> {
     if (this.active !== active) {
-      return false;
+      return Promise.resolve(false);
     }
 
     this.active = undefined;
+    active.releasePending = true;
+    this.finalizing.add(active);
     this.pointerSamplePort.setPointerPressed(false);
-    await this.pointerSamplePort.setInteractionLock(false);
-    return this.runtime.endPointerGesture({ triggerHappy });
+    // Establish the old unlock revision before Runtime callbacks can admit a
+    // new gesture. Its native readback is cleanup, not a click-feedback gate.
+    // Start both even if either port throws synchronously, and retain ownership
+    // until both settle so blur/cancel can still revoke a delayed click.
+    const unlock = (async () => this.pointerSamplePort.setInteractionLock(false))();
+    const end = (async () => this.runtime.endPointerGesture({
+      triggerHappy,
+      isCurrent: () => !active.cancelled,
+    }))();
+    active.finalization = Promise.allSettled([end, unlock]).then(([ended, unlocked]) => {
+      if (ended.status === "rejected") throw ended.reason;
+      if (unlocked.status === "rejected") throw unlocked.reason;
+      return ended.value;
+    }).finally(() => { this.finalizing.delete(active); });
+    return active.finalization;
   }
+}
+
+function projectCursor(sample: NativePointerSnapshotV1, scaleFactor: number): LogicalPoint {
+  const ratio = sample.scaleFactor / scaleFactor;
+  return { x: sample.cursorScreenLogical.x * ratio, y: sample.cursorScreenLogical.y * ratio };
 }
